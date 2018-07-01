@@ -1,10 +1,10 @@
 import Stream from "./Stream";
 import { Success, Failure } from "./Result";
 
-class Parser<T> {
-  parse: (stream: Stream) => Success<T> | Failure<T>;
+class Parser<S, F> {
+  parse: (stream: Stream) => Success<S> | Failure<F>;
 
-  constructor(parse: (stream: Stream) => Success<T> | Failure<T>) {
+  constructor(parse: (stream: Stream) => Success<S> | Failure<F>) {
     this.parse = parse;
   }
 
