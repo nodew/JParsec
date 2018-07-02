@@ -7,6 +7,7 @@ export const satisfied = (
   predicate: ((x: string) => boolean)
 ): Parser<string, string> =>
   new Parser((stream: Stream) => {
+    console.log(stream);
     if (stream.length === 0) {
       return new Failure<string>("unexpected end", stream);
     }
@@ -48,22 +49,34 @@ export const space: Parser<string, string> = char(" ");
 
 export const tab: Parser<string, string> = char("\t");
 
-export const spaces: Parser<string, string> = many(space);
+export const spaces: Parser<string[], string> = many(space);
 
 export const whiteSpaces = many(oneOf(" \n\t\r"));
 
 export const string = (str: string): Parser<string, string> =>
-  sequence(str.split("").map(char)).bimap(_ => str, fail => fail);
+  sequence(str.split("").map(char)).bimap<string, string>(
+    _ => str,
+    fail => fail
+  );
 
 export const not = (parser: Parser<string, string>): Parser<string, string> =>
-  new Parser((stream: Stream) =>
-    parser
-      .run(stream)
-      .fold(
+  new Parser<string, string>((stream: Stream) => {
+    const result = parser.run(stream);
+    if (result instanceof Success) {
+      return result.fold<string, string>(
         (value, s) => new Failure("not failed", stream),
         (value, s) =>
           stream.length > 0
             ? new Success(stream.head(), stream.move(1))
             : new Failure("unexpected end", stream)
-      )
-  );
+      );
+    } else {
+      return result.fold<string, string>(
+        (value, s) => new Failure("not failed", stream),
+        (value, s) =>
+          stream.length > 0
+            ? new Success(stream.head(), stream.move(1))
+            : new Failure("unexpected end", stream)
+      );
+    }
+  });
