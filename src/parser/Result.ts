@@ -1,66 +1,62 @@
-import Stream from "./Stream";
+import ParseError from "./Error";
+import StateT from "./State";
 
-export type ParseResult<S, F> = Success<S> | Failure<F>;
+class ParseResultT<T, U> {
+  value: T | ParseError;
+  state: StateT<U>;
 
-abstract class Result<T> {
-  value: T;
-  rest: Stream;
-
-  constructor(value: T, rest: Stream) {
+  constructor(value: T | ParseError, state: StateT<U>) {
     this.value = value;
-    this.rest = rest;
+    this.state = state;
   }
 
-  abstract map<S>(fn: (v: T) => S): ParseResult<S, T>;
-
-  abstract bimap<S, F>(s: (v: T) => S, f: (v: T) => F): ParseResult<S, F>;
-
-  abstract chain<S2, _>(
-    fn: (v: T, rest?: Stream) => ParseResult<S2, T>
-  ): ParseResult<S2, T>;
-
-  abstract fold<S2, F2>(
-    s: (v: T, rest?: Stream) => ParseResult<S2, F2>,
-    f: (v: T, rest?: Stream) => ParseResult<S2, F2>
-  ): ParseResult<S2, F2>;
-}
-
-export class Success<T> extends Result<T> {
-  map<S>(fn: (v: T) => S): Success<S> {
-    return new Success(fn(this.value), this.rest);
+  get isSuccess(): boolean {
+    return !this.isFailure;
   }
 
-  bimap<S, _>(s: (v: T) => S, _): Success<S> {
-    return new Success(s(this.value), this.rest);
+  get isFailure(): boolean {
+    return this.value instanceof ParseError;
   }
 
-  chain<S2, F2>(
-    fn: (v: T, rest?: Stream) => ParseResult<S2, F2>
-  ): ParseResult<S2, F2> {
-    return fn(this.value, this.rest);
+  map<G>(fn: (v: T) => G): ParseResultT<G, U> {
+    if (this.value instanceof ParseError) {
+      return new ParseResultT<G, U>(this.value, this.state);
+    } else {
+      return new ParseResultT<G, U>(fn(this.value), this.state);
+    }
   }
 
-  fold<S2, F2>(s: (v: T, rest?: Stream) => ParseResult<S2, F2>, _) {
-    return s(this.value, this.rest);
-  }
-}
-
-export class Failure<T> extends Result<T> {
-  map(_: any): Failure<T> {
-    return this;
-  }
-
-  bimap<_, F>(_, f: (v: T) => F): Failure<F> {
-    return new Failure(f(this.value), this.rest);
+  bimap<G>(
+    s: (v: T) => G,
+    f: (v: ParseError) => ParseError
+  ): ParseResultT<G, U> {
+    if (this.value instanceof ParseError) {
+      return new ParseResultT<G, U>(f(this.value), this.state);
+    } else {
+      return new ParseResultT<G, U>(s(this.value), this.state);
+    }
   }
 
-  chain(_: any): Failure<T> {
-    return this;
+  chain<G>(
+    fn: (v: T, state: StateT<U>) => ParseResultT<G, U>
+  ): ParseResultT<G, U> {
+    if (this.value instanceof ParseError) {
+      return new ParseResultT<G, U>(this.value, this.state);
+    } else {
+      return fn(this.value, this.state);
+    }
   }
 
-  fold<S2, F2>(_, f: (v: T, rest?: Stream) => ParseResult<S2, F2>) {
-    return f(this.value, this.rest);
+  fold<G>(
+    s: (v: T, state?: StateT<U>) => ParseResultT<G, U>,
+    f: (v: ParseError, state?: StateT<U>) => ParseResultT<G, U>
+  ): ParseResultT<G, U> {
+    if (this.value instanceof ParseError) {
+      return f(this.value, this.state);
+    } else {
+      return s(this.value, this.state);
+    }
   }
 }
 
-export default Result;
+export default ParseResultT;

@@ -1,44 +1,54 @@
-import Parser from "./parser/Parser";
-import { Success, Failure } from "./parser/Result";
-import Stream from "./parser/Stream";
+import ParserT from "./parser/Parser";
+import StateT from "./parser/State";
+import ParseError, { ErrorType, Error } from "./parser/Error";
+import ParseResultT from "./parser/Result";
 
-export const either = (parsers: Parser<any, any>[]): Parser<any, any> =>
-  new Parser((stream: Stream) => {
+export const either = (parsers: ParserT<any, any>[]): ParserT<any, any> =>
+  new ParserT((state: StateT<any>) => {
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
-      const result = parser.run(stream);
-      if (result instanceof Success) {
+      const result = parser.run(state);
+      if (result.isSuccess) {
         return result;
       }
     }
-    return new Failure("either failed", stream);
+    return new ParseResultT(
+      new ParseError(state.getPos(), [
+        new Error(ErrorType.UNEXPECT, ""),
+        new Error(ErrorType.EXPECT, "")
+      ]),
+      state
+    );
   });
 
-export function always<S>(value: S): Parser<S, null> {
-  return new Parser<S, null>((stream: Stream) => new Success(value, stream));
+export function always<T>(value: T): ParserT<T, any> {
+  return new ParserT<T, any>(
+    (state: StateT<any>) => new ParseResultT(value, state)
+  );
 }
 
-export function never<F>(value: F): Parser<null, F> {
-  return new Parser<null, F>((stream: Stream) => new Failure(value, stream));
+export function never(value: Error): ParserT<any, any> {
+  return new ParserT<null, any>(
+    (state: StateT<any>) =>
+      new ParseResultT<any, any>(new ParseError(state.getPos(), [value]), state)
+  );
 }
 
-export function append<S1, S2>(
-  p1: Parser<[S1], any>,
-  p2: Parser<S2, any>
-): Parser<Array<S1 | S2>, any> {
-  return p1.chain((vs: Array<S1 | S2>) => p2.map((v: S2) => vs.concat([v])));
+export function append(
+  p1: ParserT<any[], any>,
+  p2: ParserT<any, any>
+): ParserT<any[], any> {
+  return p1.chain((vs: any[]) => p2.map<any>((v: any) => vs.concat([v])));
 }
 
-export function concat<S1, S2>(
-  p1: Parser<S1[], any>,
-  p2: Parser<S2, any>
-): Parser<(S1 | S2)[], any> {
-  return p1.chain((xs: Array<S1 | S2>) => p2.map(ys => xs.concat(ys)));
+export function concat(
+  p1: ParserT<any[], any>,
+  p2: ParserT<any, any>
+): ParserT<any[], any> {
+  return p1.chain((xs: any) => p2.map(ys => xs.concat(ys)));
 }
 
-export function sequence(
-  parsers: Parser<string | any, any>[]
-): Parser<string | any[], any> {
+export function sequence(parsers: ParserT<any, any>[]): ParserT<any[], any> {
   return parsers.reduce((acc, parser) => append(acc, parser), always([]));
 }
 
@@ -46,119 +56,115 @@ export function between(l, p, r) {
   return sequence([l, p, r]).map(v => v[1]);
 }
 
-export function maybe<S>(parser: Parser<S, any>): Parser<S, null> {
-  return new Parser<S, null>((stream: Stream) => {
-    const result = parser.run(stream);
-    if (result instanceof Success) {
-      return result.fold<S, null>(
-        (v, s) => new Success<S>(v, s),
-        (v, s) => new Success<S>(null, stream)
-      );
-    } else {
-      return result.fold<S, null>(
-        (v, s) => new Success<S>(v, s),
-        (v, s) => new Success<S>(null, stream)
-      );
-    }
-  });
+export function maybe<T>(parser: ParserT<T, any>): ParserT<T, any> {
+  return new ParserT<T, any>((state: StateT<any>) =>
+    parser
+      .run(state)
+      .fold<T>(
+        (v, s) => new ParseResultT<T, any>(v, state),
+        (v, s) => new ParseResultT<T, any>(null, state)
+      )
+  );
 }
 
-export function lookAhead<S, F>(parser: Parser<S, F>): Parser<S, F> {
-  return new Parser((stream: Stream) => {
-    const result = parser.run(stream);
-    if (result instanceof Success) {
-      return result.fold<S, F>(
-        v => new Success<S>(v, stream),
-        v => new Failure<F>(v, stream)
-      );
-    } else {
-      return result.fold<S, F>(
-        v => new Success<S>(v, stream),
-        v => new Failure<F>(v, stream)
-      );
-    }
-  });
+export function lookAhead<T>(parser: ParserT<T, any>): ParserT<T, any> {
+  return new ParserT((state: StateT<any>) =>
+    parser
+      .run(state)
+      .fold<T>(
+        v => new ParseResultT<T, any>(v, state),
+        v => new ParseResultT<T, any>(v, state)
+      )
+  );
 }
 
-export function many<S, F>(parser: Parser<S, F>): Parser<S[], F> {
-  return new Parser<S[], F>((stream: Stream) => {
-    const result = parser.run(stream);
-    if (result instanceof Success) {
-      return result.fold<S[], F>(
-        (value, s) =>
-          many<S, F>(parser)
-            .map(rest => [value].concat(rest))
-            .run(s),
-        (value, s) => new Success<S[]>([], stream)
-      );
+export function many<T>(parser: ParserT<T, any>): ParserT<T[], any> {
+  return new ParserT<T[], any>((state: StateT<any>) =>
+    parser.run(state).fold<T[]>(
+      (v, s) =>
+        many<T>(parser)
+          .map(next => [v].concat(next))
+          .run(s),
+      (v, s) => new ParseResultT<T[], any>([], state)
+    )
+  );
+}
+
+export function many1<T>(parser: ParserT<T, any>): ParserT<T[], any> {
+  return new ParserT<T[], any>((state: StateT<any>) => {
+    const result = parser.run(state);
+    if (result.value instanceof ParseError) {
+      return new ParseResultT<T[], any>(result.value, result.state);
     } else {
-      return result.fold<S[], F>(
-        (value, s) =>
+      return result.fold<T[]>(
+        (v, s) =>
           many(parser)
-            .map(rest => [value].concat(rest))
+            .map(next => [v].concat(next))
             .run(s),
-        (_, s) => new Success<S[]>([], stream)
+        (v, s) => new ParseResultT<T[], any>(v, s)
       );
     }
   });
 }
 
-export function many1<S, F>(parser: Parser<S, F>): Parser<S[], F | string> {
-  return new Parser<S[], F | string>((stream: Stream) => {
-    const result = parser.run(stream);
-    if (result instanceof Success) {
-      return result.fold<S[], F>(
-        (value, s) =>
-          many(parser)
-            .map(rest => [value].concat(rest))
-            .run(s),
-        (value, s) => new Failure<F>(value, stream)
-      );
-    } else {
-      return new Failure<string>("unexpected", stream);
-    }
-  });
-}
-
-export function manyTill<S, F>(
-  parser: Parser<S, F>,
-  end: Parser<any, any>
-): Parser<S[], F> {
-  return new Parser<S[], F>((stream: Stream) => {
-    let _stream = stream;
+export function manyTill<T, G>(
+  parser: ParserT<T, any>,
+  end: ParserT<G, any>
+): ParserT<T[], any> {
+  return new ParserT<T[], any>((state: StateT<any>) => {
+    let st = state;
     let values = [];
-    while (end.run(_stream) instanceof Failure) {
-      const result = parser.run(_stream);
-      _stream = result.rest;
-      if (result instanceof Failure) {
-        return new Failure<F>(result.value, stream);
+    while (end.run(st).isSuccess) {
+      const result = parser.run(st);
+      st = result.state;
+      if (result.value instanceof ParseError) {
+        return new ParseResultT<T[], any>(result.value, st);
       } else {
         values.push(result.value);
       }
     }
-    return new Success<S[]>(values, _stream);
+    return new ParseResultT<T[], any>(values, st);
   });
 }
 
-export function count<S, F>(n: number, parser: Parser<S, F>): Parser<S[], F> {
-  return new Parser<S[], F>((stream: Stream) => {
+export function count<T>(
+  n: number,
+  parser: ParserT<T, any>
+): ParserT<T[], any> {
+  return new ParserT<T[], any>((state: StateT<any>) => {
     if (n <= 0) {
-      return new Success<S[]>([], stream);
+      return new ParseResultT<T[], any>([], state);
     }
-    let _stream = stream;
+    let st = state;
     let values = [];
     let i = 0;
     let result;
     while (i < n) {
-      result = parser.run(_stream);
-      _stream = result.rest;
-      if (result instanceof Success) {
+      result = parser.run(st);
+      st = result.state;
+      if (result.value instanceof ParseError) {
+        return new ParseResultT<T[], any>(result.value, state);
+      } else {
         i++;
         values.push(result.value);
-      } else {
-        return new Failure<F>(result.value, stream);
       }
     }
-    return new Success<Array<S>>(values, _stream);
+    return new ParseResultT<T[], any>(values, st);
   });
 }
+
+export const not = (parser: ParserT<any, any>) =>
+  new ParserT<string, any>((state: StateT<any>) =>
+    parser
+      .run(state)
+      .fold<any>(
+        (v, s) =>
+          new ParseResultT<string, any>(
+            new ParseError(state.getPos(), [
+              new Error(ErrorType.FAILURE, "not")
+            ]),
+            state
+          ),
+        (v, s) => new ParseResultT<string, any>(v, state)
+      )
+  );

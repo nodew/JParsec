@@ -1,69 +1,53 @@
-import Stream from "./Stream";
-import { Success, ParseResult } from "./Result";
+import StateT from "./State";
+import ParseError from "./Error";
+import ParseResultT from "./Result";
 
-export type ParseF<S, F> = (stream: Stream) => ParseResult<S, F>;
+export type ParseT<T, U> = (state: StateT<U>) => ParseResultT<T, U>;
 
-class Parser<S, F> {
-  parse: ParseF<S, F>;
+class ParserT<T, U> {
+  parse: ParseT<T, U>;
 
-  constructor(parse: ParseF<S, F>) {
+  constructor(parse: ParseT<T, U>) {
     this.parse = parse;
   }
 
-  run(iterable: Stream | string | Array<string>): ParseResult<S, F> {
-    if (iterable instanceof Stream) {
-      return this.parse(iterable);
-    } else {
-      return this.parse(new Stream(iterable));
-    }
+  run(state: StateT<U>): ParseResultT<T, U> {
+    return this.parse(state);
   }
 
-  map<T>(f: (x: S) => T): Parser<T, F> {
-    return new Parser(stream => {
-      const result = this.parse(stream);
-      if (result instanceof Success) {
-        return result.map<T>(f);
-      } else {
-        return result.map(f);
-      }
+  map<G>(f: (x: T) => G): ParserT<G, U> {
+    return new ParserT((state: StateT<U>) => {
+      return this.parse(state).map<G>(f);
     });
   }
 
-  bimap<S2, F2>(s: ((x: S) => S2), f: ((y: F) => F2)): Parser<S2, F2> {
-    return new Parser<S2, F2>(stream => {
-      const result = this.parse(stream);
-      if (result instanceof Success) {
-        return result.bimap<S2, F>(s, f);
-      } else {
-        return result.bimap<S, F2>(s, f);
-      }
+  bimap<G>(
+    s: ((value: T) => G),
+    f: ((err: ParseError) => ParseError)
+  ): ParserT<G, U> {
+    return new ParserT<G, U>((state: StateT<U>) => {
+      return this.parse(state).bimap(s, f);
     });
   }
 
-  chain<S2>(f: (v: S, rest?: Stream) => Parser<S2, F>): Parser<S | S2, F> {
-    return new Parser(stream => {
-      const result = this.parse(stream);
-      if (result instanceof Success) {
-        return result.chain((v, s) => f(v, result.rest).run(s));
-      } else {
-        return result.chain(f);
-      }
+  chain<G>(f: (value: T, state?: StateT<U>) => ParserT<G, U>): ParserT<G, U> {
+    return new ParserT<G, U>((state: StateT<U>) => {
+      return this.parse(state).chain<G>((v, s) => f(v, s).run(s));
     });
   }
 
-  fold<S2, F2>(
-    s: (v: S) => ParseResult<S2, F>,
-    f: (v: F) => ParseResult<S, F2>
-  ): Parser<S | S2, F | F2> {
-    return new Parser<S | S2, F | F2>(stream => {
-      const result = this.parse(stream);
-      if (result instanceof Success) {
-        return result.fold<S2, F>(s, f);
-      } else {
-        return result.fold<S, F2>(s, f);
-      }
+  fold<G>(
+    s: ((value: T) => ParseResultT<G, U>),
+    f: ((err: ParseError) => ParseResultT<G, U>)
+  ): ParserT<G, U> {
+    return new ParserT<G, U>((state: StateT<U>) => {
+      return this.parse(state).fold<G>(s, f);
     });
   }
 }
 
-export default Parser;
+export type Parse<R> = ParseT<R, any>;
+
+export type Parser<R> = ParserT<R, any>;
+
+export default ParserT;
