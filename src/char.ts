@@ -58,3 +58,16 @@ export const whiteSpaces = many(oneOf(" \n\t\r"));
 
 export const string = (str: string) =>
   sequence(str.split("").map(char)).bimap<string>(_ => str, f => f);
+
+export const crlf = string("\r\n");
+
+export const eof = new ParserT((state: StateT<any>) => {
+  if (state.stream.length === 0) {
+    return new ParseResultT<null, any>(null, state);
+  }
+
+  return new ParseResultT<string, any>(
+    new ParseError(state.getPos(), [new Error(ErrorType.EXPECT, "EOF")]),
+    state
+  );
+});

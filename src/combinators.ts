@@ -61,7 +61,7 @@ export function maybe<T>(parser: ParserT<T, any>): ParserT<T, any> {
     parser
       .run(state)
       .fold<T>(
-        (v, s) => new ParseResultT<T, any>(v, state),
+        (v, s) => new ParseResultT<T, any>(v, s),
         (v, s) => new ParseResultT<T, any>(null, state)
       )
   );
@@ -114,7 +114,7 @@ export function manyTill<T, G>(
   return new ParserT<T[], any>((state: StateT<any>) => {
     let st = state;
     let values = [];
-    while (end.run(st).isSuccess) {
+    while (end.run(st).isFailure) {
       const result = parser.run(st);
       st = result.state;
       if (result.value instanceof ParseError) {
