@@ -16,8 +16,18 @@ export function parse<T, U>(
   parser: ParserT<T, any>,
   _stream: string,
   uState?: U
-): ParseResultT<T, U> {
+): T {
   const stream = new Stream(_stream);
   const initState = new StateT(stream, uState);
-  return parser.run(initState);
+  const result = parser.run(initState);
+  if (result.value instanceof ParseError) {
+    const pos = result.value.pos;
+    const errorDetail = [
+      `parse failed at position: line ${pos.line}, column ${pos.column}`,
+      `error: ${result.value.errors}`
+    ].join("\n");
+    throw new Error(errorDetail);
+  } else {
+    return result.value;
+  }
 }

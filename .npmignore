@@ -2,3 +2,7 @@ src/
 test/
 examples/
 node_modules/
+sample.ts
+yarn.lock
+tslint.json
+.gitignore
