@@ -1,14 +1,14 @@
 {
   "name": "jparsec",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "parsec implemetation in JavaScript",
-  "main": "index.js",
+  "main": "lib/index.js",
   "directories": {
     "lib": "lib"
   },
   "scripts": {
     "lint": "tslint -p ./tsconfig.json --fix",
-    "build": "tsc --outdir lib ./src/index.ts",
+    "build": "tsc --outdir lib --project ./tsconfig.json --declaration",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
