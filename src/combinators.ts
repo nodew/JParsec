@@ -1,9 +1,12 @@
 import ParserT from "./parser/Parser";
 import StateT from "./parser/State";
-import ParseError, { ErrorType, Error } from "./parser/Error";
+import ParseError, { ErrorType, ErrorMessage } from "./parser/Error";
 import ParseResultT from "./parser/Result";
 
-export const either = (parsers: ParserT<any, any>[]): ParserT<any, any> =>
+export const either = (
+  parsers: ParserT<any, any>[],
+  expect?: string
+): ParserT<any, any> =>
   new ParserT((state: StateT<any>) => {
     for (let i = 0; i < parsers.length; i++) {
       const parser = parsers[i];
@@ -14,8 +17,8 @@ export const either = (parsers: ParserT<any, any>[]): ParserT<any, any> =>
     }
     return new ParseResultT(
       new ParseError(state.getPos(), [
-        new Error(ErrorType.UNEXPECT, ""),
-        new Error(ErrorType.EXPECT, "")
+        [ErrorType.EXPECT, expect],
+        [ErrorType.UNEXPECT, state.stream.head()]
       ]),
       state
     );
@@ -27,10 +30,13 @@ export function always<T>(value: T): ParserT<T, any> {
   );
 }
 
-export function never(value: Error): ParserT<any, any> {
+export function never(errorMsg: ErrorMessage): ParserT<any, any> {
   return new ParserT<null, any>(
     (state: StateT<any>) =>
-      new ParseResultT<any, any>(new ParseError(state.getPos(), [value]), state)
+      new ParseResultT<any, any>(
+        new ParseError(state.getPos(), [errorMsg]),
+        state
+      )
   );
 }
 
@@ -94,7 +100,7 @@ export function many1<T>(parser: ParserT<T, any>): ParserT<T[], any> {
   return new ParserT<T[], any>((state: StateT<any>) => {
     const result = parser.run(state);
     if (result.value instanceof ParseError) {
-      return new ParseResultT<T[], any>(result.value, result.state);
+      return new ParseResultT<T[], any>(result.value, result.nextState);
     } else {
       return result.fold<T[]>(
         (v, s) =>
@@ -116,7 +122,7 @@ export function manyTill<T, G>(
     let values = [];
     while (end.run(st).isFailure) {
       const result = parser.run(st);
-      st = result.state;
+      st = result.nextState;
       if (result.value instanceof ParseError) {
         return new ParseResultT<T[], any>(result.value, st);
       } else {
@@ -141,7 +147,7 @@ export function count<T>(
     let result;
     while (i < n) {
       result = parser.run(st);
-      st = result.state;
+      st = result.nextState;
       if (result.value instanceof ParseError) {
         return new ParseResultT<T[], any>(result.value, state);
       } else {
@@ -160,9 +166,7 @@ export const not = (parser: ParserT<any, any>) =>
       .fold<any>(
         (v, s) =>
           new ParseResultT<string, any>(
-            new ParseError(state.getPos(), [
-              new Error(ErrorType.FAILURE, "not")
-            ]),
+            new ParseError(state.getPos(), [[ErrorType.FAILURE, "not"]]),
             state
           ),
         (v, s) => new ParseResultT<string, any>(v, state)
